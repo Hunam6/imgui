@@ -267,6 +267,7 @@ void ImGui_ImplMetal_RenderDrawData(ImDrawData* draw_data, id<MTLCommandBuffer> 
     MetalBuffer* indexBuffer = [ctx dequeueReusableBufferOfLength:indexBufferLength device:commandBuffer.device];
 
     ImGui_ImplMetal_SetupRenderState(draw_data, commandBuffer, commandEncoder, renderPipelineState, vertexBuffer, 0);
+    NSUInteger bound_vtx_byte_off = 0;
 
     // Will project scissor/clipping rectangles into framebuffer space
     ImVec2 clip_off = draw_data->DisplayPos;         // (0,0) unless using multi-viewports
@@ -288,7 +289,10 @@ void ImGui_ImplMetal_RenderDrawData(ImDrawData* draw_data, id<MTLCommandBuffer> 
                 // User callback, registered via ImDrawList::AddCallback()
                 // (ImDrawCallback_ResetRenderState is a special callback value used by the user to request the renderer to reset render state.)
                 if (pcmd->UserCallback == ImDrawCallback_ResetRenderState)
+                {
                     ImGui_ImplMetal_SetupRenderState(draw_data, commandBuffer, commandEncoder, renderPipelineState, vertexBuffer, vertexBufferOffset);
+                    bound_vtx_byte_off = (NSUInteger)vertexBufferOffset;
+                }
                 else
                     pcmd->UserCallback(draw_list, pcmd);
             }
@@ -323,7 +327,12 @@ void ImGui_ImplMetal_RenderDrawData(ImDrawData* draw_data, id<MTLCommandBuffer> 
                 if (tex_id != ImTextureID_Invalid)
                     [commandEncoder setFragmentTexture:(__bridge id<MTLTexture>)(void*)(intptr_t)(tex_id) atIndex:0];
 
-                [commandEncoder setVertexBufferOffset:(vertexBufferOffset + pcmd->VtxOffset * sizeof(ImDrawVert)) atIndex:0];
+                NSUInteger vb_off = (NSUInteger)(vertexBufferOffset + (size_t)pcmd->VtxOffset * sizeof(ImDrawVert));
+                if (vb_off != bound_vtx_byte_off)
+                {
+                    [commandEncoder setVertexBufferOffset:vb_off atIndex:0];
+                    bound_vtx_byte_off = vb_off;
+                }
                 [commandEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
                                            indexCount:pcmd->ElemCount
                                             indexType:sizeof(ImDrawIdx) == 2 ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32
